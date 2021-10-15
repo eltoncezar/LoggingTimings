@@ -16,7 +16,7 @@ using System;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
-namespace LoggingTimings.Configuration
+namespace LoggingTimings
 {
     /// <summary>
     /// Launches <see cref="Operation"/>s with non-default completion and abandonment levels.

@@ -13,10 +13,9 @@
 // limitations under the License.
 
 using System;
-using LoggingTimings.Configuration;
 using Microsoft.Extensions.Logging;
 
-namespace LoggingTimings.Extensions
+namespace LoggingTimings
 {
     /// <summary>
     /// Extends <see cref="ILogger"/> with timed operations.

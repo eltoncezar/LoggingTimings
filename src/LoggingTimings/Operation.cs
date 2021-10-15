@@ -17,9 +17,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
-using LoggingTimings.Configuration;
 using Microsoft.Extensions.Logging;
-using LoggingTimings.Extensions;
 
 namespace LoggingTimings
 {

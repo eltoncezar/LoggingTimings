@@ -1,7 +1,7 @@
 ﻿using System.Linq;
 using System.Text.Json;
+using LoggingTimings;
 using Microsoft.Extensions.Logging;
-using LoggingTimings.Extensions;
 
 namespace Example
 {
