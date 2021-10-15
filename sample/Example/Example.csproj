@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netcoreapp1.0</TargetFramework>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
     <AssemblyName>Example</AssemblyName>
     <OutputType>Exe</OutputType>
     <PackageId>Example</PackageId>
@@ -14,12 +14,11 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\SerilogTimings\SerilogTimings.csproj" />
+    <ProjectReference Include="..\..\src\LoggingTimings\LoggingTimings.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Serilog.Sinks.Literate" Version="2.0.0" />
-    <PackageReference Include="Serilog.Sinks.Seq" Version="2.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Console" Version="5.0.0" />
   </ItemGroup>
 
 </Project>

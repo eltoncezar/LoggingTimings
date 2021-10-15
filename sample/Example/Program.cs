@@ -1,6 +1,7 @@
 ﻿using System.Linq;
-using Serilog;
-using SerilogTimings;
+using System.Text.Json;
+using Microsoft.Extensions.Logging;
+using LoggingTimings.Extensions;
 
 namespace Example
 {
@@ -8,26 +9,29 @@ namespace Example
     {
         public static void Main(string[] args)
         {
-            Log.Logger = new LoggerConfiguration()
-                .Enrich.FromLogContext()
-                .WriteTo.LiterateConsole()
-                .WriteTo.Seq("http://localhost:5341")
-                .CreateLogger();
+            ILogger log = LoggerFactory
+                .Create(builder => builder.AddJsonConsole(options =>
+                {
+                    options.IncludeScopes = true;
+                    options.JsonWriterOptions = new JsonWriterOptions
+                    {
+                        Indented = true
+                    };
+                }))
+                .CreateLogger("Example");
 
-            Log.Information("Hello, world!");
+            log.LogInformation("Hello, world!");
 
             var count = 10000;
-            using (var op = Operation.Begin("Adding {Count} successive integers", count))
+            using (var op = log.BeginTime("Adding {Count} successive integers", count))
             {
                 var sum = Enumerable.Range(0, count).Sum();
-                Log.Information("This event is tagged with an operation id");
-
+                log.LogInformation("This event is tagged with an operation id");
+                // op.Abandon();
                 op.Complete("Sum", sum);
             }
 
-            Log.Information("Goodbye!");
-
-            Log.CloseAndFlush();
+            log.LogInformation("Goodbye!");
         }
     }
 }

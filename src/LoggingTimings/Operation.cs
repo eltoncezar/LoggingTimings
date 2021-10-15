@@ -1,4 +1,4 @@
-﻿// Copyright 2016 SerilogTimings Contributors
+﻿// Copyright 2016 LoggingTimings Contributors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,14 +16,12 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
-using Serilog;
-using Serilog.Context;
-using Serilog.Core;
-using Serilog.Events;
-using SerilogTimings.Extensions;
-using SerilogTimings.Configuration;
+using System.Text.Json;
+using LoggingTimings.Configuration;
+using Microsoft.Extensions.Logging;
+using LoggingTimings.Extensions;
 
-namespace SerilogTimings
+namespace LoggingTimings
 {
     /// <summary>
     /// Records operation timings to the Serilog log.
@@ -56,20 +54,21 @@ namespace SerilogTimings
             OperationId
         };
 
-        const string OutcomeCompleted = "completed", OutcomeAbandoned = "abandoned";
+        private const string OutcomeCompleted = "completed", OutcomeAbandoned = "abandoned";
 
-        ILogger _target;
-        readonly string _messageTemplate;
-        readonly object[] _args;
-        readonly Stopwatch _stopwatch;
+        private ILogger _target;
+        private IDisposable _scope;
+        private readonly string _messageTemplate;
+        private readonly object[] _args;
+        private readonly Stopwatch _stopwatch;
 
-        IDisposable _popContext;
-        CompletionBehaviour _completionBehaviour;
-        readonly LogEventLevel _completionLevel;
-        readonly LogEventLevel _abandonmentLevel;
+        private Guid? _operationId;
+        private CompletionBehaviour _completionBehaviour;
+        private readonly LogLevel _completionLevel;
+        private readonly LogLevel _abandonmentLevel;
         private Exception _exception;
 
-        internal Operation(ILogger target, string messageTemplate, object[] args, CompletionBehaviour completionBehaviour, LogEventLevel completionLevel, LogEventLevel abandonmentLevel)
+        internal Operation(ILogger target, string messageTemplate, object[] args, CompletionBehaviour completionBehaviour, LogLevel completionLevel, LogLevel abandonmentLevel)
         {
             if (target == null) throw new ArgumentNullException(nameof(target));
             if (messageTemplate == null) throw new ArgumentNullException(nameof(messageTemplate));
@@ -80,8 +79,10 @@ namespace SerilogTimings
             _completionBehaviour = completionBehaviour;
             _completionLevel = completionLevel;
             _abandonmentLevel = abandonmentLevel;
-            _popContext = LogContext.PushProperty(nameof(Properties.OperationId), Guid.NewGuid());
+            _operationId = Guid.NewGuid();
             _stopwatch = Stopwatch.StartNew();
+
+            _scope = _target.BeginScope(new Dictionary<string, object> { ["OperationId"] = _operationId });
         }
 
         /// <summary>
@@ -98,9 +99,9 @@ namespace SerilogTimings
         /// <param name="args">Arguments to the log message. These will be stored and captured only when the
         /// operation completes, so do not pass arguments that are mutated during the operation.</param>
         /// <returns>An <see cref="Operation"/> object.</returns>
-        public static Operation Begin(string messageTemplate, params object[] args)
+        public Operation BeginTime(string messageTemplate, params object[] args)
         {
-            return Log.Logger.BeginOperation(messageTemplate, args);
+            return _target.BeginTime(messageTemplate, args);
         }
 
         /// <summary>
@@ -110,9 +111,9 @@ namespace SerilogTimings
         /// <param name="args">Arguments to the log message. These will be stored and captured only when the
         /// operation completes, so do not pass arguments that are mutated during the operation.</param>
         /// <returns>An <see cref="Operation"/> object.</returns>
-        public static IDisposable Time(string messageTemplate, params object[] args)
+        public IDisposable Time(string messageTemplate, params object[] args)
         {
-            return Log.Logger.TimeOperation(messageTemplate, args);
+            return _target.Time(messageTemplate, args);
         }
 
         /// <summary>
@@ -124,9 +125,9 @@ namespace SerilogTimings
         /// <returns>An object from which timings with the configured levels can be made.</returns>
         /// <remarks>If neither <paramref name="completion"/> nor <paramref name="abandonment"/> is enabled
         /// on the logger at the time of the call, a no-op result is returned.</remarks>
-        public static LevelledOperation At(LogEventLevel completion, LogEventLevel? abandonment = null)
+        public LevelledOperation TimeAt(LogLevel completion, LogLevel? abandonment = null)
         {
-            return Log.Logger.OperationAt(completion, abandonment);
+            return _target.TimeAt(completion, abandonment);
         }
 
         /// <summary>
@@ -147,17 +148,22 @@ namespace SerilogTimings
         /// </summary>
         /// <param name="resultPropertyName">The name for the property to attach to the event.</param>
         /// <param name="result">The result value.</param>
-        /// <param name="destructureObjects">If true, the property value will be destructured (serialized).</param>
-        public void Complete(string resultPropertyName, object result, bool destructureObjects = false)
+        /// <param name="serializeObjects">If true, the property value will be serialized in JSON.</param>
+        public void Complete(string resultPropertyName, object result, bool serializeObjects = false)
         {
             if (resultPropertyName == null) throw new ArgumentNullException(nameof(resultPropertyName));
+            if (result == null) throw new ArgumentNullException(nameof(result));
 
             _stopwatch.Stop();
 
-            if (_completionBehaviour == CompletionBehaviour.Silent)
-                return;
+            if (_completionBehaviour == CompletionBehaviour.Silent) return;
 
-            Write(_target.ForContext(resultPropertyName, result, destructureObjects), _completionLevel, OutcomeCompleted);
+            if (serializeObjects) result = JsonSerializer.Serialize(result);
+
+            using (_target.BeginScope(new Dictionary<string, object> { { resultPropertyName, result } }))
+            {
+                Write(_target, _completionLevel, OutcomeCompleted);
+            }
         }
 
         /// <summary>
@@ -169,6 +175,27 @@ namespace SerilogTimings
                 return;
 
             Write(_target, _abandonmentLevel, OutcomeAbandoned);
+        }
+
+        /// <summary>
+        /// Abandon the timed operation. This will write the event and elapsed time to the log.
+        /// </summary>
+        /// <param name="resultPropertyName">The name for the property to attach to the event.</param>
+        /// <param name="result">The result value.</param>
+        /// <param name="serializeObjects">If true, the property value will be serialized in JSON.</param>
+        public void Abandon(string resultPropertyName, object result, bool serializeObjects = false)
+        {
+            if (resultPropertyName == null) throw new ArgumentNullException(nameof(resultPropertyName));
+            if (result == null) throw new ArgumentNullException(nameof(result));
+
+            if (_completionBehaviour == CompletionBehaviour.Silent) return;
+
+            if (serializeObjects) result = JsonSerializer.Serialize(result);
+
+            using (_target.BeginScope(new Dictionary<string, object> { { resultPropertyName, result } }))
+            {
+                Write(_target, _abandonmentLevel, OutcomeAbandoned);
+            }
         }
 
         /// <summary>
@@ -185,7 +212,7 @@ namespace SerilogTimings
         /// <summary>
         /// Dispose the operation. If not already completed or canceled, an event will be written
         /// with timing information. Operations started with <see cref="Time"/> will be completed through
-        /// disposal. Operations started with <see cref="Begin"/> will be recorded as abandoned.
+        /// disposal. Operations started with <see cref="BeginTime"/> will be recorded as abandoned.
         /// </summary>
         public void Dispose()
         {
@@ -209,61 +236,29 @@ namespace SerilogTimings
             PopLogContext();
         }
 
-        void PopLogContext()
+        private void PopLogContext()
         {
-            _popContext?.Dispose();
-            _popContext = null;
+            // _operationId = Guid.NewGuid();
+            _operationId = null;
+            _scope.Dispose();
         }
 
-        void Write(ILogger target, LogEventLevel level, string outcome)
+        private void Write(ILogger target, LogLevel level, string outcome)
         {
             _completionBehaviour = CompletionBehaviour.Silent;
 
             var elapsed = _stopwatch.Elapsed.TotalMilliseconds;
 
-            target.Write(level, _exception, $"{_messageTemplate} {{{nameof(Properties.Outcome)}}} in {{{nameof(Properties.Elapsed)}:0.0}} ms", _args.Concat(new object[] { outcome, elapsed }).ToArray());
+            using (_target.BeginScope(new Dictionary<string, object>
+                {
+                    {"Outcome", outcome},
+                    {"Elapsed", elapsed}
+                }))
+            {
+                target.Log(level, _exception, $"{_messageTemplate} {{{nameof(Properties.Outcome)}}} in {{{nameof(Properties.Elapsed)}:0.0}} ms", _args.Concat(new object[] { outcome, elapsed }).ToArray());
+            }
 
             PopLogContext();
-        }
-
-        /// <summary>
-        /// Enriches resulting log event via the provided enricher.
-        /// </summary>
-        /// <param name="enricher">Enricher that applies in the context.</param>
-        /// <returns>Same <see cref="Operation"/>.</returns>
-        /// <seealso cref="ILogger.ForContext(ILogEventEnricher)"/>
-        public Operation EnrichWith(ILogEventEnricher enricher)
-        {
-            _target = _target.ForContext(enricher);
-            return this;
-        }
-
-        /// <summary>
-        /// Enriches resulting log event via the provided enrichers.
-        /// </summary>
-        /// <param name="enrichers">Enrichers that apply in the context.</param>
-        /// <returns>A logger that will enrich log events as specified.</returns>
-        /// <returns>Same <see cref="Operation"/>.</returns>
-        /// <seealso cref="ILogger.ForContext(IEnumerable{ILogEventEnricher})"/>
-        public Operation EnrichWith(IEnumerable<ILogEventEnricher> enrichers)
-        {
-            _target = _target.ForContext(enrichers);
-            return this;
-        }
-
-        /// <summary>
-        /// Enriches resulting log event with the specified property.
-        /// </summary>
-        /// <param name="propertyName">The name of the property. Must be non-empty.</param>
-        /// <param name="value">The property value.</param>
-        /// <param name="destructureObjects">If true, the value will be serialized as a structured
-        /// object if possible; if false, the object will be recorded as a scalar or simple array.</param>
-        /// <returns>Same <see cref="Operation"/>.</returns>
-        /// <seealso cref="ILogger.ForContext(string,object,bool)"/>
-        public Operation EnrichWith(string propertyName, object value, bool destructureObjects = false)
-        {
-            _target = _target.ForContext(propertyName, value, destructureObjects);
-            return this;
         }
 
         /// <summary>
@@ -271,7 +266,7 @@ namespace SerilogTimings
         /// </summary>
         /// <param name="exception">Exception related to the event.</param>
         /// <returns>Same <see cref="Operation"/>.</returns>
-        /// <seealso cref="LogEvent.Exception"/>
+        /// <seealso cref="Exception"/>
         public Operation SetException(Exception exception)
         {
             _exception = exception;

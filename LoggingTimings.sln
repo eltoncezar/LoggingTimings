@@ -12,9 +12,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		README.md = README.md
 	EndProjectSection
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SerilogTimings", "src\SerilogTimings\SerilogTimings.csproj", "{3B709371-7B4D-41D5-9F0A-34E3CA14B6CD}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LoggingTimings", "src\LoggingTimings\LoggingTimings.csproj", "{3B709371-7B4D-41D5-9F0A-34E3CA14B6CD}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SerilogTimings.Tests", "test\SerilogTimings.Tests\SerilogTimings.Tests.csproj", "{E813903B-9791-43FA-AB21-7757385C7EB1}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "LoggingTimings.Tests", "test\LoggingTimings.Tests\LoggingTimings.Tests.csproj", "{E813903B-9791-43FA-AB21-7757385C7EB1}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Example", "sample\Example\Example.csproj", "{3482E6CB-3EE6-4BCF-8DBB-2343ECCFD1E1}"
 EndProject
