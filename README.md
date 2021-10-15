@@ -1,10 +1,12 @@
-# Serilog Timings [![Build status](https://ci.appveyor.com/api/projects/status/rgluby771a4rkwul?svg=true)](https://ci.appveyor.com/project/NicholasBlumhardt/serilog-timings) [![NuGet Release](https://img.shields.io/nuget/v/SerilogTimings.svg)](https://nuget.org/packages/serilogtimings)
+# Logging Timings [![NuGet Release](https://img.shields.io/nuget/v/SerilogTimings.svg)](https://nuget.org/packages/serilogtimings)
 
-Serilog's support for structured data makes it a great way to collect timing information. It's easy 
-to get started with in development, because the timings are printed to the same output as other
-log messages (the console, files, etc.) so a metrics server doesn't have to be available all the time.
+This project is a port of [Serilog Timings](https://github.com/nblumhardt/serilog-timings) to the [`Microsoft.Extensions.Logging`](https://docs.microsoft.com/en-us/aspnet/core/fundamentals/logging) framework.
 
-Serilog Timings is built with some specific requirements in mind:
+
+
+Serilog's support for structured data makes it a great way to collect timing information. However, the Microsoft default logging solution doesn't provide the same features and easy of use. So I decided to port this great project, so we can use it without Serilog dependency. 
+
+**Serilog Timings** was built with some specific requirements in mind, and **Logging Timings** try to keep them:
 
  * One operation produces exactly one log event (events are raised at the completion of an operation)
  * Natural and fully-templated messages
@@ -15,28 +17,29 @@ information on a per-operation basis.
 
 ### Installation
 
-The library is published as _SerilogTimings_ on NuGet.
+The library is published as _LoggingTimings_ on NuGet.
 
 ```powershell
-Install-Package SerilogTimings -DependencyVersion Highest
+Install-Package LoggingTimings -DependencyVersion Highest
 ```
 
-.NET 4.5+ and .NET Core are supported. The package uses Serilog 2.0, which is compatible with both platforms.
+**.NET 4.6.1+** and **.NET Standard 2.0+** are supported. The package uses `Microsoft.Extensions.Logging` 5.0, which is compatible with both platforms.
 
 ### Getting started
 
-Before your timings will go anywhere, [install and configure Serilog](http://serilog.net).
+Before your timings will go anywhere, [install and configure Microsoft.Extensions.Logging](https://docs.microsoft.com/en-us/aspnet/core/fundamentals/logging).
 
-Types are in the `SerilogTimings` namespace.
+Types are in the `LoggingTimings` namespace.
 
 ```csharp
-using SerilogTimings;
+using LoggingTimings;
 ```
 
+### Usage
 The simplest use case is to time an operation, without explicitly recording success/failure:
 
 ```csharp
-using (Operation.Time("Submitting payment for {OrderId}", order.Id))
+using (logger.Time("Submitting payment for {OrderId}", order.Id))
 {
     // Timed block of code goes here
 }
@@ -51,17 +54,17 @@ At the completion of the `using` block, a message will be written to the log lik
 The operation description passed to `Time()` is a message template; the event written to the log
 extends it with `" {Outcome} in {Elapsed} ms"`.
 
- * All events raised by SerilogTimings carry an `Elapsed` property in milliseconds
+ * All events raised by LoggingTimings carry an `Elapsed` property in milliseconds
  * `Outcome` will always be `"completed"` when the `Time()` method is used
 
 All of the properties from the description, plus the outcome and timing, will be recorded as
 first-class properties on the log event.
 
 Operations that can either _succeed or fail_, or _that produce a result_, can be created with
-`Operation.Begin()`:
+`logger.BeginTime()`:
 
 ```csharp
-using (var op = Operation.Begin("Retrieving orders for {CustomerId}", customer.Id))
+using (var op = logger.BeginTime("Retrieving orders for {CustomerId}", customer.Id))
 {
 	// Timed block of code goes here
 
@@ -97,25 +100,12 @@ To suppress this message, for example when an operation turns out to be inapplic
 `op.Cancel()`. Once `Cancel()` has been called, no event will be written by the operation on
 either completion or abandonment.
 
-### Use with `ILogger`
 
-If a contextual `ILogger` is available, the extensions methods `TimeOperation()` and
-`BeginOperation()` can be used to write operation timings through it:
 
-```csharp
-using (logger.TimeOperation("Submitting payment for {OrderId}", order.Id))
-{
-    // Timed block of code goes here
-}
-```
+### `OperationId` Context
 
-These otherwise behave identically to `Operation.Time()` and `Operation.Begin()`.
-
-### `LogContext` support
-
-If your application enables the Serilog `LogContext` feature using `Enrich.FromLogContext()` on
-the `LoggerConfiguration`, _SerilogTimings_ will add an `OperationId` property to all events inside
-timing blocks automatically.
+_LoggingTimings_ will automatically add an `OperationId` property to all events inside
+timing blocks.
 
 This is **highly recommended**, because it makes it much easier to trace from a timing result back 
 through the operation that raised it.
@@ -125,27 +115,19 @@ through the operation that raised it.
 Timings are most useful in production, so timing events are recorded at the `Information` level and
 higher, which should generally be collected all the time.
 
-If you truly need `Verbose`- or `Debug`-level timings, you can trigger them with `Operation.At()` or
-the `OperationAt()` extension method on `ILogger`:
+If you truly need `Trace`- or `Debug`-level timings, you can trigger them with `logger.TimeAt()`:
 
 ```csharp
-using (Operation.At(LogEventLevel.Debug).Time("Preparing zip archive"))
+using (logger.TimerAt(LogEventLevel.Debug).Time("Preparing zip archive"))
 {
     // ...
 ```
 
 When a level is specified, both completion and abandonment events will use it. To configure a different
-abandonment level, pass the second optional parameter to the `At()` method.
+abandonment level, pass the second optional parameter to the `TimerAt()` method.
 
 ### Caveats
 
 One important usage note: because the event is not written until the completion of the `using` block
-(or call to `Complete()`), arguments to `Begin()` or `Time()` are not captured until then; don't
+(or call to `Complete()`), arguments to `BeginTime()` or `Time()` are not captured until then; don't
 pass parameters to these methods that mutate during the operation.
-
-### How does this relate to SerilogMetrics?
-
-[SerilogMetrics](https://github.com/serilog-metrics/serilog-metrics) is a mature metrics solution
-for Serilog that includes timings as well as counters, gauges and more. Serilog Timings is an 
-alternative implementation of timings only, designed with some different stylistic preferences and
-goals. You should definitely check out SerilogMetrics as well, to see if it's more to your tastes!
